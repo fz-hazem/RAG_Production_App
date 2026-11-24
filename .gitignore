@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secrets and local state
+.env
+uploads/
+qdrant_storage/
