@@ -144,6 +144,7 @@ le modèle improviser.
 ├── vector_db.py        # Classe QdrantStorage (création de collection, upsert, recherche)
 ├── custom_types.py     # Modèles Pydantic échangés entre les steps
 ├── streamlit_app.py    # Interface : upload de PDF et questions
+├── tests/              # Tests automatisés (pytest)
 ├── pyproject.toml      # Dépendances (gérées avec uv)
 ├── uv.lock             # Versions verrouillées
 ├── .env.example        # Modèle de configuration
@@ -236,6 +237,22 @@ uv run streamlit run streamlit_app.py
 > 💡 **Réglage de `top_k`** : trop bas, le modèle manque de contexte ; trop haut, il est noyé
 > sous des passages peu pertinents. Une valeur entre 4 et 8 est un bon point de départ.
 
+## Tests
+
+```bash
+uv run pytest
+```
+
+La suite ne demande ni clé OpenAI, ni Qdrant, ni serveur Inngest : les embeddings sont simulés,
+Qdrant tourne en mémoire et les fonctions Inngest sont exécutées avec l'utilitaire
+`inngest.experimental.mocked`. Elle couvre notamment :
+
+- la lecture et le découpage d'un vrai PDF ;
+- l'idempotence de l'ingestion (réimporter un document ne crée pas de doublons) ;
+- l'ordre des résultats de recherche ;
+- la sérialisation JSON des sorties de steps ;
+- l'exécution complète des deux fonctions (`rag/ingest_pdf` et `rag/query_pdf_ai`).
+
 ## Référence des événements Inngest
 
 ### `rag/ingest_pdf`, fonction « RAG: Ingest PDF »
@@ -265,6 +282,10 @@ Sortie : `{ "answer": str, "sources": list[str], "num_contexts": int }`
 - **Chunks de 1000 tokens avec 200 de recouvrement** : le recouvrement évite qu'une phrase importante
   soit coupée en deux à la frontière entre deux chunks.
 - **Similarité cosinus** : adaptée aux embeddings OpenAI, qui sont normalisés.
+- **`PydanticSerializer` sur le client Inngest** : Inngest enregistre les sorties de steps en JSON.
+  Sans ce serializer, retourner un modèle Pydantic fait échouer le step.
+- **Traitements bloquants dans des threads** : lecture du PDF, appels OpenAI et Qdrant passent par
+  `asyncio.to_thread`, pour ne pas figer la boucle d'événements de FastAPI.
 - **Client OpenAI créé à la demande** : importer les modules ne nécessite pas de clé API,
   ce qui facilite les tests et le démarrage des outils.
 - **`query_points` de Qdrant** : remplace `search`, retiré des versions récentes du client.

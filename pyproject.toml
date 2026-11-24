@@ -17,3 +17,13 @@ dependencies = [
     "streamlit>=1.49.1",
     "uvicorn>=0.35",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "reportlab>=5.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
