@@ -21,7 +21,8 @@ def get_inngest_client() -> inngest.Inngest:
 def save_uploaded_pdf(file) -> Path:
     uploads_dir = Path("uploads")
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    file_path = uploads_dir / file.name
+    # Path(...).name strips any directory components (path traversal protection).
+    file_path = uploads_dir / Path(file.name).name
     file_bytes = file.getbuffer()
     file_path.write_bytes(file_bytes)
     return file_path
@@ -44,13 +45,18 @@ st.title("Upload a PDF to Ingest")
 uploaded = st.file_uploader("Choose a PDF", type=["pdf"], accept_multiple_files=False)
 
 if uploaded is not None:
-    with st.spinner("Uploading and triggering ingestion..."):
-        path = save_uploaded_pdf(uploaded)
-        # Kick off the event and block until the send completes
-        asyncio.run(send_rag_ingest_event(path))
-        # Small pause for user feedback continuity
-        time.sleep(0.3)
-    st.success(f"Triggered ingestion for: {path.name}")
+    # Streamlit reruns the whole script on every interaction (e.g. the "Ask" button),
+    # so remember which upload was already ingested to avoid re-triggering it.
+    upload_key = f"{uploaded.name}:{uploaded.size}"
+    if st.session_state.get("ingested_upload") != upload_key:
+        with st.spinner("Uploading and triggering ingestion..."):
+            path = save_uploaded_pdf(uploaded)
+            # Kick off the event and block until the send completes
+            asyncio.run(send_rag_ingest_event(path))
+            # Small pause for user feedback continuity
+            time.sleep(0.3)
+        st.session_state["ingested_upload"] = upload_key
+    st.success(f"Triggered ingestion for: {Path(uploaded.name).name}")
     st.caption("You can upload another PDF if you like.")
 
 st.divider()
@@ -79,7 +85,7 @@ def _inngest_api_base() -> str:
 
 def fetch_runs(event_id: str) -> list[dict]:
     url = f"{_inngest_api_base()}/events/{event_id}/runs"
-    resp = requests.get(url)
+    resp = requests.get(url, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     return data.get("data", [])

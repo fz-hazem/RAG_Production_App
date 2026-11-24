@@ -1,9 +1,12 @@
+import os
+
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
 
 class QdrantStorage:
-    def __init__(self, url="http://localhost:6333", collection="docs", dim=3072):
+    def __init__(self, url: str | None = None, collection: str = "docs", dim: int = 3072):
+        url = url or os.getenv("QDRANT_URL", "http://localhost:6333")
         self.client = QdrantClient(url=url, timeout=30)
         self.collection = collection
         if not self.client.collection_exists(self.collection):
@@ -13,25 +16,32 @@ class QdrantStorage:
             )
 
     def upsert(self, ids, vectors, payloads):
-        points = [PointStruct(id=ids[i], vector=vectors[i], payload=payloads[i]) for i in range(len(ids))]
-        self.client.upsert(self.collection, points=points)
+        points = [
+            PointStruct(id=ids[i], vector=vectors[i], payload=payloads[i])
+            for i in range(len(ids))
+        ]
+        if points:
+            self.client.upsert(collection_name=self.collection, points=points)
 
     def search(self, query_vector, top_k: int = 5):
-        results = self.client.search(
+        # `QdrantClient.search` is deprecated and removed in recent qdrant-client
+        # releases; `query_points` is the supported replacement.
+        response = self.client.query_points(
             collection_name=self.collection,
-            query_vector=query_vector,
+            query=query_vector,
             with_payload=True,
-            limit=top_k
+            limit=top_k,
         )
-        contexts = []
-        sources = set()
+        contexts: list[str] = []
+        sources: list[str] = []
 
-        for r in results:
-            payload = getattr(r, "payload", None) or {}
+        for point in response.points:
+            payload = getattr(point, "payload", None) or {}
             text = payload.get("text", "")
             source = payload.get("source", "")
             if text:
                 contexts.append(text)
-                sources.add(source)
+                if source and source not in sources:
+                    sources.append(source)
 
-        return {"contexts": contexts, "sources": list(sources)}
+        return {"contexts": contexts, "sources": sources}
